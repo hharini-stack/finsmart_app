@@ -1,186 +1,171 @@
 import streamlit as st
+import yfinance as yf
+import openai
 import pandas as pd
-import time
 from datetime import datetime
 
-# --- PAGE CONFIGURATION (Bloomberg Style Dark Mode) ---
-st.set_page_config(
-    page_title="FinSmart",
-    page_icon="📈",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# --- PAGE CONFIGURATION ---
+st.set_page_config(page_title="FinSmart Live", page_icon="📡", layout="wide")
 
-# --- CUSTOM CSS (To make it look like an App, not a script) ---
+# --- CUSTOM CSS ---
 st.markdown("""
 <style>
-    .card {
-        background-color: #1E1E1E;
-        padding: 20px;
-        border-radius: 10px;
-        border-left: 5px solid #333;
-        margin-bottom: 20px;
-    }
-    .bullish { border-left-color: #00C805 !important; }
-    .bearish { border-left-color: #FF2B2B !important; }
-    .neutral { border-left-color: #FFA500 !important; }
-    
-    .headline { font-size: 22px; font-weight: bold; color: #FFFFFF; font-family: 'Helvetica Neue', sans-serif; }
-    .source { font-size: 12px; color: #888; margin-bottom: 10px; }
-    .tag { background-color: #333; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-right: 5px; }
-    .impact-high { color: #FF2B2B; font-weight: bold; }
-    .impact-med { color: #FFA500; font-weight: bold; }
+    .news-card { background-color: #1E1E1E; padding: 20px; border-radius: 8px; border-left: 5px solid #333; margin-bottom: 25px; }
+    .headline { font-size: 22px; font-weight: 700; color: #fff; margin-bottom: 8px; }
+    .source { font-size: 12px; color: #aaa; text-transform: uppercase; }
+    .ticker-badge { padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 14px; margin-right: 10px; }
+    .up { background: rgba(0, 200, 5, 0.2); color: #00FF41; border: 1px solid #00C805; }
+    .down { background: rgba(255, 43, 43, 0.2); color: #FF2B2B; border: 1px solid #FF2B2B; }
+    .impact-box { background: #2D2D2D; padding: 15px; border-radius: 6px; margin-top: 15px; border-left: 3px solid #00A8FF; }
+    .impact-title { color: #00A8FF; font-weight: bold; font-size: 14px; text-transform: uppercase; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- MOCK DATA ENGINE (Simulating your Backend) ---
-def get_news_data():
-    return [
-        {
-            "id": 1,
-            "headline": "Fed hikes rates by 25bps, signals pause",
-            "source": "Bloomberg Markets",
-            "time": "10m ago",
-            "tags": ["Macro", "USD", "Fed"],
-            "sentiment": "bearish",
-            "impact": 95,
-            "beginner_view": "The US Central Bank is making it more expensive to borrow money. This usually slows down the economy but helps stop prices from rising too fast (inflation).",
-            "expert_view": "FOMC delivers 25bps hike as priced in. Dot plot suggests terminal rate is near. Expect DXY consolidation and pressure on growth stocks.",
-            "el_erian_comment": "This is the 'trilemma' in action—fighting inflation without breaking growth."
-        },
-        {
-            "id": 2,
-            "headline": "Bitcoin surges past $45k on ETF rumours",
-            "source": "CoinDesk",
-            "time": "2h ago",
-            "tags": ["Crypto", "BTC", "Regulation"],
-            "sentiment": "bullish",
-            "impact": 88,
-            "beginner_view": "Bitcoin's price is going up because people think the government will soon let regular stock investors buy Bitcoin easily (through an ETF).",
-            "expert_view": "Institutional inflows anticipated pending SEC approval. BTC breaking key resistance levels; short squeeze likely above $46k.",
-            "el_erian_comment": "Speculative assets are reacting to liquidity hopes, not fundamentals."
-        },
-        {
-            "id": 3,
-            "headline": "NVIDIA revenue beats expectations by 20%",
-            "source": "Financial Times",
-            "time": "4h ago",
-            "tags": ["Tech", "AI", "Stocks"],
-            "sentiment": "bullish",
-            "impact": 60,
-            "beginner_view": "NVIDIA (the chip company) sold way more AI chips than anyone guessed. This is good for the company and shows the AI boom is real.",
-            "expert_view": "Data center revenue up 140% YoY. Forward guidance raised. Supports the structural AI bull case despite high valuations.",
-            "el_erian_comment": None # Not all stories have expert comments
-        },
-        {
-            "id": 4,
-            "headline": "Oil prices drop as production increases",
-            "source": "Reuters",
-            "time": "5h ago",
-            "tags": ["Commodities", "Oil", "Energy"],
-            "sentiment": "bearish",
-            "impact": 45,
-            "beginner_view": "Gas might get cheaper soon because there is more oil available in the market than people need right now.",
-            "expert_view": "WTI crude testing support at $70. Supply glut concerns outweigh geopolitical risk premiums.",
-            "el_erian_comment": None
-        }
-    ]
-
-# --- SIDEBAR (User Profile & Watchlist) ---
+# --- SIDEBAR: SETTINGS & KEYS ---
 with st.sidebar:
-    st.header("👤 User Profile")
+    st.title("⚙️ Control Panel")
     
-    # 1. The "Level" Slider
-    expertise = st.select_slider(
-        "Your Knowledge Level",
-        options=["Beginner", "Intermediate", "Expert"],
-        value="Beginner"
-    )
+    # 1. OpenAI Key Input (Crucial for the "Intelligence")
+    api_key = st.text_input("Enter OpenAI API Key:", type="password", help="Needed to generate the 'Why/How' summaries.")
+    if api_key:
+        openai.api_key = api_key
     
     st.divider()
     
-    # 2. The Watchlist (The Feature You Asked For)
-    st.header("👀 Watchlist")
-    st.caption("Filter news by your interests")
+    # 2. User Preferences
+    expertise = st.select_slider("Knowledge Level", options=["Beginner", "Expert"], value="Beginner")
     
-    all_tags = ["Macro", "Crypto", "Tech", "Stocks", "Commodities", "Fed", "AI"]
-    selected_watchlist = st.multiselect(
-        "Select Topics:",
-        all_tags,
-        default=["Macro", "Crypto", "Tech"]
-    )
+    # 3. Watchlist
+    st.subheader("👀 Watchlist")
+    default_tickers = ["AAPL", "NVDA", "TSLA", "BTC-USD", "EURUSD=X"]
+    tickers = st.multiselect("Select Assets:", default_tickers, default=["AAPL", "BTC-USD"])
     
-    st.divider()
-    st.info(f"Viewing as: **{expertise}**\n\nFiltering for: **{', '.join(selected_watchlist)}**")
+    st.info("💡 'BTC-USD' is Bitcoin. 'EURUSD=X' is Euro/Dollar.")
 
-# --- MAIN FEED ---
-st.title("FinSmart ⚡")
-st.caption("Contextual Intelligence for Modern Markets")
-
-# Get Data
-news_items = get_news_data()
-
-# Filter Data based on Watchlist
-filtered_news = [
-    item for item in news_items 
-    if any(tag in selected_watchlist for tag in item["tags"])
-]
-
-if not filtered_news:
-    st.warning("No news found for your watchlist. Try adding more topics!")
-
-# Render the News Cards
-for item in filtered_news:
+# --- FUNCTION: FETCH LIVE DATA (YFINANCE) ---
+def get_live_data(ticker_list):
+    """
+    Fetches real-time price changes and news for selected tickers.
+    """
+    data = []
     
-    # Determine the "Why" text based on the Slider
-    if expertise == "Beginner":
-        explanation = item["beginner_view"]
-        context_label = "💡 The Basic Concept"
-    elif expertise == "Expert":
-        explanation = item["expert_view"]
-        context_label = "🧠 Technical Analysis"
-    else: # Intermediate gets a mix or default
-        explanation = item["beginner_view"] + " " + item["expert_view"]
-        context_label = "📝 Deep Dive"
-
-    # HTML Card Construction
-    sentiment_class = item["sentiment"] # bullish, bearish, neutral
-    
-    # Visual Layout
-    with st.container():
-        # Using columns to create the layout
-        c1, c2 = st.columns([0.85, 0.15])
+    # 1. Get Price Changes
+    for t in ticker_list:
+        stock = yf.Ticker(t)
         
-        with c1:
+        # Get Price Change
+        try:
+            hist = stock.history(period="2d")
+            if len(hist) >= 2:
+                close_today = hist['Close'].iloc[-1]
+                close_yesterday = hist['Close'].iloc[-2]
+                change_pct = ((close_today - close_yesterday) / close_yesterday) * 100
+                price_display = f"{change_pct:+.2f}%"
+                direction = "up" if change_pct > 0 else "down"
+            else:
+                price_display = "0.00%"
+                direction = "up"
+        except:
+            price_display = "N/A"
+            direction = "up"
+
+        # 2. Get Real News
+        # yfinance news returns a list of dicts: {'title':..., 'link':..., 'publisher':...}
+        news_list = stock.news
+        
+        if news_list:
+            # We take the latest story for this ticker
+            latest = news_list[0] 
+            data.append({
+                "ticker": t,
+                "price_change": price_display,
+                "direction": direction,
+                "headline": latest['title'],
+                "source": latest['publisher'],
+                "link": latest['link'],
+                "published": datetime.fromtimestamp(latest['providerPublishTime']).strftime('%H:%M'),
+                "raw_text": latest['title'] # In a real app, we'd scrape the full link content
+            })
+    return data
+
+# --- FUNCTION: GENERATE AI INSIGHT ---
+def analyze_news(headline, ticker, level):
+    """
+    Sends the headline to OpenAI to generate the 'Why' and 'How'.
+    """
+    if not api_key:
+        return None # User hasn't entered a key
+
+    prompt = f"""
+    Analyze this financial news headline for {ticker}: "{headline}"
+    
+    I need a structured explanation for a {level} audience.
+    Return ONLY a JSON-like format with exactly these two keys:
+    WHY: (Explain why this event happened in 1 sentence)
+    HOW: (Explain how this impacts the specific stock or the user's wallet in 1 sentence)
+    
+    Do not use technical jargon if level is Beginner. Use trading terms if level is Expert.
+    """
+    
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-3.5-turbo", # Use gpt-4o if you have access
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"Error generating insight: {e}"
+
+# --- MAIN APP UI ---
+st.title("FinSmart Live 📡")
+
+if not tickers:
+    st.warning("Please select tickers in the sidebar.")
+else:
+    # Fetch Data
+    with st.spinner(f"Fetching live data for {', '.join(tickers)}..."):
+        news_items = get_live_data(tickers)
+
+    # Display Data
+    for item in news_items:
+        
+        # Ticker Badge Logic
+        css_class = item['direction'] # 'up' or 'down'
+        
+        with st.container():
             st.markdown(f"""
-            <div class="card {sentiment_class}">
-                <div class="source">{item['source']} • {item['time']}</div>
+            <div class="news-card">
+                <div class="source">{item['source']} • {item['published']}</div>
                 <div class="headline">{item['headline']}</div>
-                <div style="margin-top: 10px;">
-                    {' '.join([f'<span class="tag">{t}</span>' for t in item['tags']])}
+                <div style="margin-top:10px;">
+                    <span class="ticker-badge {css_class}">{item['ticker']} {item['price_change']}</span>
+                    <a href="{item['link']}" style="color: #00A8FF; text-decoration: none; font-size: 14px;">Read Full Story ↗</a>
                 </div>
             </div>
             """, unsafe_allow_html=True)
             
-            # The "Context Toggle" Section (The Magic Feature)
-            with st.expander(f"{context_label} (Click to Read)", expanded=True):
-                st.write(explanation)
-                
-                # El-Erian Comment Feature
-                if item["el_erian_comment"]:
-                    st.markdown(f"""
-                    > **Mohamed El-Erian says:** > *"{item['el_erian_comment']}"*
-                    """)
-        
-        with c2:
-            # The "Bloomberg" Data Column
-            st.metric(label="Impact", value=f"{item['impact']}/100")
-            if item['sentiment'] == 'bullish':
-                st.markdown("🟢 **Bullish**")
-            else:
-                st.markdown("🔴 **Bearish**")
+            # THE AI BUTTON
+            # We don't auto-generate for everything to save your API costs/latency.
+            # User clicks "Analyze" to run the LLM.
             
-            st.button("Save", key=f"save_{item['id']}")
-            st.button("Share", key=f"share_{item['id']}")
-
-    st.divider()
+            col1, col2 = st.columns([0.2, 0.8])
+            with col1:
+                analyze_btn = st.button(f"⚡ Analyze Impact", key=f"btn_{item['ticker']}")
+            
+            if analyze_btn:
+                if not api_key:
+                    st.error("Please enter an OpenAI API Key in the sidebar first!")
+                else:
+                    with st.spinner("AI is analyzing market implications..."):
+                        insight = analyze_news(item['headline'], item['ticker'], expertise)
+                        
+                        # Parsing the output simply for display (Robust JSON parsing recommended for prod)
+                        st.markdown(f"""
+                        <div class="impact-box">
+                            <div class="impact-title">🤖 FinSmart Analysis ({expertise} Mode)</div>
+                            <div style="color: #ddd; margin-top: 5px; white-space: pre-wrap;">{insight}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+            
+        st.divider()
