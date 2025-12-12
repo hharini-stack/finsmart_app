@@ -1,5 +1,13 @@
 import streamlit as st
-import yfinance as yf
+import subprocess
+import sys
+
+# Force install yfinance if it's missing
+try:
+    import yfinance
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "yfinance"])
+    import yfinance as yf
 import openai
 import pandas as pd
 from datetime import datetime
@@ -169,3 +177,4 @@ else:
                         """, unsafe_allow_html=True)
             
         st.divider()
+
